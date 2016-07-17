@@ -1,74 +1,154 @@
 import java.util.Collection;
 import java.util.HashMap;
-import java.util.Map;
+//import java.util.List;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
 
 @SuppressWarnings("WeakerAccess")
-public class Cache<K, T> {
+public class Cache<K, T> implements Iterable<K> {
 
-    private HashMap<K, Pair<T>> map;
+    private HashMap<K, Node> map;
     private long maxSize;
+    private DoubleList lru;
 
-    public Cache (long maxSize) {
-        map = new HashMap<K, Pair<T>>();
+    public Cache(long maxSize) {
+        map = new HashMap<K, Node>();
         this.maxSize = maxSize;
+        lru = new DoubleList();
     }
 
-    public void add(K key, T object) {
-        Collection<Pair<T>> values = map.values();
-        for (Pair<T> p : values) {
-            p.update(object);
+    public T find(K key) {
+        Node temp = map.get(key);
+        if (temp == null) {
+            return null;
+        } else {
+            lru.sendBack(temp);
+            return temp.data;
         }
+    }
+
+    // Assumes find already run on key
+    public void add(K key, T object) {
         if (map.size() >= maxSize) {
             killOldest();
         }
-        map.put(key, new Pair<T>(object));
-        printCache();
+        Node temp = new Node(key, object);
+        lru.append(temp);
+        map.put(key, temp);
     }
 
     private void killOldest() {
         if (map.size() == 0)  return;
-        Map.Entry<K, Pair<T>> oldest = null;
-        Collection<Map.Entry<K, Pair<T>>> values = map.entrySet();
-        for (Map.Entry<K, Pair<T>> entry : values) {
-            if (oldest == null) {
-                oldest = entry;
-            } else {
-                if (entry.getValue().age > oldest.getValue().age) oldest = entry;
-            }
-        }
-        assert oldest != null;
-        System.out.println("REMOVED [Key: " + oldest.getKey() + " | Value: " +
-                oldest.getValue().object + " | Age: " + oldest.getValue().age + "]");
-        map.remove(oldest.getKey());
+        Node temp = lru.front;
+        lru.remove(temp);
+        map.remove(temp.key);
     }
 
-    private void printCache() {
-        Collection<Map.Entry<K, Pair<T>>> values = map.entrySet();
-        for (Map.Entry<K, Pair<T>> entry : values) {
-            String s = ("[Key: " + entry.getKey()) +
-                    " | Value: " + entry.getValue().object +
-                    " | Age: " + entry.getValue().age +
+    public void printLRU() {
+        Node temp = lru.front;
+        while (temp != null) {
+            String s = "[Key: " + temp.key +
+                    " | Value: " + temp.data +
                     "]";
             System.out.println(s);
+            temp = temp.next;
         }
     }
 
-    private class Pair<E> {
+    @Override
+    public String toString() {
+        StringBuilder stringBuilder = new StringBuilder();
+        for (K key : this) {
+            stringBuilder.append(key + ", ");
+            if (stringBuilder.length() > 10000) {
+                stringBuilder.append("...");
+                break;
+            }
+        }
+        if (stringBuilder.length() > 0) {
+            stringBuilder.setLength(stringBuilder.length() - 2);
+        }
+        return stringBuilder.toString();
+    }
 
-        final E object;
-        long age;
+    @Override
+    public Iterator<K> iterator() {
+        return lru.iterator();
+    }
 
-        private Pair (E object) {
-            this.object = object;
-            age = 0;
+    private class DoubleList {
+        Node front;
+        Node back;
+        DoubleList() {
+            front = null;
+            back = null;
         }
 
-        private void update (E object) {
-            if (this.object == object) {
-                age = 0;
+        Iterator<K> iterator() {
+            return new Iterator<K>() {
+                Node node = lru.front;
+                @Override
+                public boolean hasNext() {
+                    return (node != null);
+                }
+
+                @Override
+                public K next() {
+                    if (!hasNext()) throw new NoSuchElementException();
+                    K key = node.key;
+                    node = node.next;
+                    return key;
+                }
+            };
+        }
+
+        void append(Node node) {
+            node.prev = null;
+            node.next = null;
+            if (back == null) {
+                back = node;
+                front = back;
             } else {
-                age += 1;
+                back.next = node;
+                back = back.next;
             }
+        }
+
+        void sendBack(Node node) {
+            remove(node);
+            append(node);
+        }
+
+        private void remove(Node node) {
+            if (node == lru.front) {
+                lru.front = node.next;
+            }
+            if (node == lru.back) {
+                lru.back = node.prev;
+            }
+            if (node.next != null) {
+                node.next.prev = node.prev;
+            }
+            if (node.prev != null) {
+                node.prev.next = node.next;
+            }
+        }
+    }
+
+    private class Node {
+        Node next;
+        Node prev;
+        T data;
+        K key;
+
+        private Node(K key, T data) {
+            this.data = data;
+            this.key = key;
+        }
+
+        @Override
+        public String toString() {
+            return "[" + key + "|" + data + "]";
         }
     }
 }
