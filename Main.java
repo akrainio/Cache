@@ -1,32 +1,44 @@
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.LineNumberReader;
-import java.util.Objects;
-
 public class Main {
-    public static void main (String[] args) throws IOException {
-        final int cacheSize = 3;
-        Cache<String, String> cache = new Cache<>(cacheSize);
-        try (LineNumberReader lineNumberReader = new LineNumberReader(new InputStreamReader(System.in))) {
-            System.out.println("Max size of cache is " + cacheSize);
-            System.out.println("Enter value to perform operation on:");
-            String s = lineNumberReader.readLine();
-            while (!Objects.equals(s, "q")) {
-                String got = cache.find(s);
-                if (got == null) {
-                    System.out.println("Not in cache");
-                    got = operation(s);
-                    cache.add(s, got);
-                } else {
-                    System.out.println("Found in cache");
+    private final static int size = 100;
+    private static long startTime = System.currentTimeMillis();
+    private static long requestCount = 0;
+    private final static Object lock = new Object();
+    public static void main(String args[]) {
+        Service service = new Service(size);
+        Runnable worker = new Runnable() {
+            @Override
+            public void run() {
+                while (true) {
+                    try {
+                        load(service, size * 2);
+                    } catch (InterruptedException e) {
+                        throw new AssertionError(e);
+                    }
                 }
-                cache.printLRU();
-                System.out.println("Next value:");
-                s = lineNumberReader.readLine();
             }
+        };
+        for (int i = 0; i < 20; ++i) {
+            Thread thread = new Thread(worker);
+            thread.start();
         }
     }
-    private static String operation(String s) {
-        return s.toUpperCase();
+
+    private static void load(Service service, int count) throws InterruptedException {
+        for (int i = 0; i < count; ++i) {
+            service.cacheCompute("k" + i);
+        }
+        addRequests(count);
+    }
+
+    private static void addRequests(int count) {
+        synchronized (lock) {
+            requestCount += count;
+            long elapsedTime = System.currentTimeMillis() - startTime;
+            if (elapsedTime > 1000) {
+                System.out.println((requestCount*1000) / elapsedTime + " reqs/s");
+                requestCount = 0;
+                startTime = System.currentTimeMillis();
+            }
+        }
     }
 }
