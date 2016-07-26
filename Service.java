@@ -2,18 +2,16 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.LineNumberReader;
 import java.util.Objects;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+@SuppressWarnings("WeakerAccess")
 public class Service {
-
+    ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final Cache<String, String> cache;
     public static String timeWaste = "";
 
     public Service(int size) {
         cache = new Cache<>(size);
-    }
-
-    private static String operation(String s) {
-        return s.toUpperCase();
     }
 
     public static String compute(String s) throws InterruptedException {
@@ -31,13 +29,19 @@ public class Service {
 
     public String cacheCompute(String s) throws InterruptedException {
         String got;
-        synchronized (cache) {
+        lock.readLock().lock();
+        try {
             got = cache.find(s);
+        } finally {
+            lock.readLock().unlock();
         }
         if (got == null) {
             got = compute(s);
-            synchronized (cache) {
+            lock.writeLock().lock();
+            try {
                 cache.add(s, got);
+            } finally {
+                lock.writeLock().unlock();
             }
         }
         return got;

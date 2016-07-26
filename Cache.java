@@ -1,8 +1,8 @@
-import java.util.Collection;
 import java.util.HashMap;
-//import java.util.List;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 @SuppressWarnings("WeakerAccess")
 public class Cache<K, T> implements Iterable<K> {
@@ -10,31 +10,71 @@ public class Cache<K, T> implements Iterable<K> {
     private HashMap<K, Node> map;
     private long maxSize;
     private DoubleList lru;
+    private final Lock readLock;
+    private final Lock writeLock;
 
     public Cache(long maxSize) {
         map = new HashMap<K, Node>();
         this.maxSize = maxSize;
         lru = new DoubleList();
+        ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+        readLock = lock.readLock();
+        writeLock = lock.writeLock();
     }
 
     public T find(K key) {
-        Node temp = map.get(key);
-        if (temp == null) {
-            return null;
-        } else {
-            lru.sendBack(temp);
-            return temp.data;
+        readLock.lock();
+        try {
+            Node temp = map.get(key);
+            if (temp == null) {
+                return null;
+            } else {
+                lru.sendBack(temp);
+                return temp.data;
+            }
+        } finally {
+            readLock.unlock();
         }
     }
 
-    // Assumes find already run on key
     public void add(K key, T object) {
-        if (map.size() >= maxSize) {
-            killOldest();
+        writeLock.lock();
+        try {
+            if (map.size() >= maxSize) {
+                killOldest();
+            }
+            Node temp = new Node(key, object);
+            lru.append(temp);
+            map.put(key, temp);
+        } finally {
+            writeLock.unlock();
         }
-        Node temp = new Node(key, object);
-        lru.append(temp);
-        map.put(key, temp);
+    }
+
+    @Override
+    public String toString() {
+        readLock.lock();
+        try {
+            StringBuilder stringBuilder = new StringBuilder();
+            for (K key : this) {
+                stringBuilder.append(key).append(", ");
+                if (stringBuilder.length() > 10000) {
+                    stringBuilder.append("...");
+                    break;
+                }
+            }
+            if (stringBuilder.length() > 0) {
+                stringBuilder.setLength(stringBuilder.length() - 2);
+            }
+            return stringBuilder.toString();
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    @Override
+    public Iterator<K> iterator() {
+        return lru.iterator();
     }
 
     private void killOldest() {
@@ -42,38 +82,6 @@ public class Cache<K, T> implements Iterable<K> {
         Node temp = lru.front;
         lru.remove(temp);
         map.remove(temp.key);
-    }
-
-    public void printLRU() {
-        Node temp = lru.front;
-        while (temp != null) {
-            String s = "[Key: " + temp.key +
-                    " | Value: " + temp.data +
-                    "]";
-            System.out.println(s);
-            temp = temp.next;
-        }
-    }
-
-    @Override
-    public String toString() {
-        StringBuilder stringBuilder = new StringBuilder();
-        for (K key : this) {
-            stringBuilder.append(key + ", ");
-            if (stringBuilder.length() > 10000) {
-                stringBuilder.append("...");
-                break;
-            }
-        }
-        if (stringBuilder.length() > 0) {
-            stringBuilder.setLength(stringBuilder.length() - 2);
-        }
-        return stringBuilder.toString();
-    }
-
-    @Override
-    public Iterator<K> iterator() {
-        return lru.iterator();
     }
 
     private class DoubleList {
